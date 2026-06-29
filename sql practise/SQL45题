@@ -1,0 +1,141 @@
+1.查询和" 01 "号的同学学习的课程完全相同的其他同学的信息
+
+select b.* from sc a left join student b on a.sid=b.sid
+where a.cid=(select cid from a where cid='01')
+问题分析：
+子查询错误：(SELECT Cid FROM a
+WHERE Cid='01')会导致返回多行，与a.Cid比较时会报错。
+逻辑错误：仅匹配选修了01某一门课程的同学，而非全部课程完全相同。
+
+参考答案：
+select b.*
+from (select * from sc where sid not in (select sid from sc where cid not in (select cid from sc where sid='01')) and sid!='01') a
+left join student b
+on a.sid=b.sid
+group by a.sid
+having count(cid)=(select count(cid) from sc where sid='01');
+
+------------------------------------------------------------------------------
+2.查询没学过"张三"老师讲授的任一门课程的学生姓名
+select b.* from sc a left join student b on a.sid = b.sid
+where a.cid not in (select cid from sc  where sc.cid= course.cid and course.tid =teacher.tid and tname='张三')
+错误分析
+1.子查询语法错误：
+子查询中直接引用了course和teacher表，但没有通过JOIN关联，导致表不存在。
+应通过Course.Tid =
+Teacher.Tid关联教师和课程。2.逻辑错误：
+原查询试图通过a.Cid NOT IN 排除张三的课程，但即使学生选
+了一门非张三的课程，他可能还选过张三的其他课程，逻辑不严密。
+正确逻辑应是：学生从未选修过张三的任何课程。
+
+参考答案：
+select *
+from student a
+where a.sid not in(
+select sid
+from sc a
+left join course c
+on a.cid=c.cid
+inner join teacher d
+on c.tid=d.tid and d.tname='张三' )
+------------------------------------------------------------------------------
+
+1.查询" 01 "课程比" 02 "课程成绩高的学生的信息及课程分数
+
+自己思路：
+
+select S.Sid,S.Sname,S.Sage,S.Ssex,SC.score 
+from Student S join SC on S.Sid =SC.Sid
+where (select score from SC  where Cid = 01) > (select score from SC  where Cid = 02)###这两个子查询没有关联主查询中的学生ID，会导致错误地比较不同学生的成绩。
+
+参考答案：select * 
+from sc a 
+left join student d
+    on a.sid=d.sid 
+inner join sc b 
+    on a.sid=b.sid and a.cid='01' and b.cid='02'
+where a.score>b.score;
+
+标准答案的执行效率也更高，因为表连接操作通常比嵌套子查询性能更好。
+
+------------------------------------------------------------------------------
+
+2.查询平均成绩大于等于 60 分的同学的学生编号和学生姓名和平均成绩
+select 
+a.sid,
+d.sname,
+avg(score) as s_avg
+from sc a
+left join student d
+on a.sid=d.sid
+group by a.sid
+having s_avg>60;
+------------------------------------------------------------------------------
+
+
+3.查询在 SC 表存在成绩的学生信息
+select 
+    b.*
+from sc a
+left join student b
+on a.sid=b.sid
+group by a.sid;
+------------------------------------------------------------------------------
+
+4.查询所有同学的学生编号、学生姓名、选课总数、所有课程的总成绩(没成绩的显示为null)
+select 
+a.sid,
+a.sname,
+count(b.cid) as cons,
+sum(b.score) as cours
+from student a
+left join sc b
+on a.sid=b.sid
+group by a.sid;
+
+------------------------------------------------------------------------------
+
+5.查询「李」姓老师的数量
+select
+count(1)
+from teacher
+where tname like '李%';
+------------------------------------------------------------------------------
+
+6.查询学过「张三」老师授课的同学的信息
+select 
+b.*
+from sc a 
+left join student b 
+on a.sid=b.sid 
+where cid in (select cid from course 
+where tid=(select tid from teacher 
+where tname='张三')
+) 
+group by sid;
+
+------------------------------------------------------------------------------
+
+7.查询没有学全所有课程的同学的信息
+用学习信息关联到成绩sc 表得到每个人的课程信息，然后分组计数就知道是不是满足全部学习了。这里需要成绩表一门功课只有一条记录
+select 
+    * 
+from student a 
+left join sc b 
+    on a.sid=b.sid 
+group by a.sid 
+    having count(b.cid)<(select count(cid)
+
+------------------------------------------------------------------------------
+8.查询至少有一门课与学号为" 01 "的同学所学相同的同学的信息
+select distinct b.* 
+from sc a #重点在于选课，所以保留左连接
+left join student b 
+on a.sid=b.sid 
+where cid in (select cid from sc where sid='01')
+ ------------------------------------------------------------------------------
+
+
+------------------------------------------------------------------------------
+
+

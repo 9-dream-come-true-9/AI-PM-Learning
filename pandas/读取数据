@@ -1,0 +1,25 @@
+zyj
+import pandas as pd
+路径='D:/pandas/读取文件.txt'
+读取数据=pd.read_csv(路径)
+print(读取数据)
+
+zyj 读取表的一部分 
+print(读取数据.head())#默认读五行数据，不算表头
+
+读取数据=pd.read_csv(路径,sep=',',header=None,names=['性别','姓名','年龄','电话','地址','入职日期'],index_col='入职日期',nrows=3)
+第二行比第一行更好，思考为什么
+
+zyj 修改表头
+读取数据=pd.read_csv(路径,sep=',',header=None,names=['性别','姓名','年龄','电话','地址','入职日期'])
+
+zyj选择索引
+
+读取数据=pd.read_csv(路径,sep=',',header=None,names=['性别','姓名','年龄','电话','地址','入职日期'],index_col='入职日期')
+
+
+zyj  txt文件转csv文件,先读，后转化
+ import pandas as pd
+数据 = pd.read_csv('c:/pandas/读取文件.txt')
+数据.to_csv('c:/pandas/读取文件.csv',encoding='utf-8-sig', index=False)####,encoding='utf-8-sig', index=False，用来解决csv乱码问题
+ print(数据)

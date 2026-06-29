@@ -1,0 +1,24 @@
+zyj查询总人口数至少为3亿的大洲和其平均gdp，其中只有gdp高于200亿且人口数大于6000万或者gdp低于80亿且首都中含有三个a的国家的计入计算，3最后按国家数从大到小排序，只显示第一行
+
+  
+第一想法：、
+SELECT continent,sum(gdp)/sum(population)
+FROM world
+where sum(population) >= 300000000 
+group by continent having (gdp > 20000000000 and population>60000000) or (gdp < 8000000000 and capital like "%a%a%a%")
+order by count(name) desc
+limit 1
+
+  
+zyj经修改：
+SELECT continent,avg(gdp) 大洲平均gdp
+FROM world
+where  (gdp > 20000000000 and population>60000000) or (gdp < 8000000000 and capital like "%a%a%a%") 
+group by continent having sum(population) >= 300000000
+order by count(name) desc
+limit 1
+
+  
+zyj思考点
+where 和 having使用场景的不同
+avg()和sum(gdp)/sum(population)的使用场景（审题：大洲和其平均gdp，不是国家的平均gtp）

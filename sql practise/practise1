@@ -1,0 +1,24 @@
+zyj查询德国和意大利每天新增治愈人数并从高到低排名，查询结果按国家名，截至日期（输出格式为'xxxx年xx月xx日'），新增治愈人数，按排名排序
+
+  
+zyj初始思路
+  
+SELECT name, 
+(confirmed-lag(confirmed, 1)over(partition by name order by whn)) 每天新增确诊人数， date_format(whn, %Y-%m-%d')截止日期,rank()over(partition by name order by 每天新增确诊人数)FROM covid
+WHERE name in('ltaly, Germany)
+order by name
+
+  
+zyj这种逻辑就错误，应该是：
+  
+select name, 日期， 每天新增治愈人
+数, rank()over(partition by name order by
+每天新增治愈人数desc)排名
+from (select name, date_format(whn, %Y
+年%m月%d日)日期 recovered -
+lag(recovered, 1)over(partition by name
+order by whn))每天新增治愈人数
+from covid
+where name in ("France', ltaly)
+) re
+order by排名
