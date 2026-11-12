@@ -1,50 +1,72 @@
-# 用 AI 生成网店经营简报
+# online-retail 案例 · 本地落地与运行提示词
 
-用一家英国网店的公开交易数据练习经营分析。运行一次，自动下载 Excel、用 pandas 清洗订单行、用 SQLite 计算指标，再调用模型 API 撰写中文简报。报告中的金额和单数由程序生成，AI 只接收汇总指标。
+把**下面分隔线以下**的这段提示词发给任意一个编码 Agent（Codex、Claude Code 等）。它会把 `cases/online-retail` 装到本地、配好隔离运行环境，并在运行前向你索要模型服务的 Base URL、模型 ID 和 API Key。
 
-[查看一次真实运行生成的简报](example-report.md)
+# 落地并运行 online-retail 经营简报案例
 
-## 一键运行
+目标项目：<https://github.com/9-dream-come-true-9/AI-PM-Learning/tree/main/cases/online-retail>
 
-准备 Python 3.11 或更新版本，以及任一支持 OpenAI 兼容 Chat Completions 接口的模型服务。首次运行需要联网安装依赖和下载数据。
+这是一个 Python 案例工程，不是可安装包：自动下载 UCI 英国网店订单 Excel，用 pandas 清洗、`metrics.sql` 计算月度指标，再调用 OpenAI 兼容的 Chat Completions 接口撰写中文经营简报。请把它在本地落地到「可直接运行」状态，并在运行前向用户索取所需凭据。
 
-启动后按提示填写服务商提供的 API Base URL、模型名和 Key。Key 输入时不回显。也可以通过当前终端的环境变量设置，已提供的项会跳过输入提示。
+## 1. 落地源码
 
-| 环境变量 | 填写内容 |
-| --- | --- |
-| `AI_API_BASE` | 服务商提供的 Base URL，例如以 `/v1` 结尾的地址。也接受完整的 `/chat/completions` 地址。 |
-| `AI_MODEL` | 服务商提供的模型 ID。 |
-| `AI_API_KEY` | 该服务商的 API Key。 |
-| `AI_API_KEY_HEADER` | 可选。默认使用 `Authorization: Bearer`。服务商要求时可改为 `api-key` 或 `x-api-key`。 |
+- 链接是 `/tree/main/cases/online-retail` 子目录，不是仓库根，直接 `git clone` 这个 URL 会失败。
+- 用稀疏浅克隆，保留 `cases/online-retail` 原有层级（README 中的运行命令依赖这个层级）：
+  ```bash
+  git clone --depth 1 --filter=blob:none --sparse https://github.com/9-dream-come-true-9/AI-PM-Learning.git AI-PM-Learning
+  git -C AI-PM-Learning sparse-checkout set cases/online-retail
+  ```
+- 目标目录已存在时不要覆盖，先报告并等待确认。
+- 不要修改拉下来的任何上游文件。
 
-每次生成简报会使用所选模型服务的额度。模型只接收两个比较月份的汇总指标，Key 用于所填服务的请求认证。
+## 2. 准备隔离运行环境
 
-Windows 上双击 [run.cmd](run.cmd)，也可以用下面的 PowerShell 命令启动。
+- 需要 Python 3.11 或更新版本；不满足就明确报告，不要改依赖版本去迁就。
+- 在 `AI-PM-Learning/cases/online-retail/` 下建立虚拟环境并安装锁定依赖：
+  ```bash
+  python -m venv .venv
+  .venv/Scripts/python.exe -m pip install -r requirements.txt   # Windows
+  # .venv/bin/python -m pip install -r requirements.txt          # macOS / Linux
+  ```
+- 依赖固定为 `pandas==3.0.3`、`openpyxl==3.1.5`，两个版本均真实存在，不要凭经验改动版本号。
+- 验证：实际 `import pandas, openpyxl`、编译检查 `summarize.py`；确认 `.venv`、`.cache`、`output` 已被 `.gitignore` 忽略，`git status` 干净。
+- 如实区分「已验证通过」与「未验证」，不要把「没报错」说成「跑通了」。
 
-```powershell
-.\cases\online-retail\run.cmd
-```
+## 3. 必须向用户索取运行凭据（先拿到，再运行）
 
-运行完成后，在本目录的 `output/report.md` 查看经营简报，在 `output/metrics.json` 核对数字。若 AI 调用失败，已计算的指标仍可查看，终端会显示原因。
+`summarize.py` 在 `main()` 一开始就读配置，三项缺任一项都会直接抛错退出；非交互终端下也不会弹出输入提示。因此**运行前必须先向用户索要以下三项，缺一不可**：
 
-macOS 或 Linux 可以在本目录运行以下命令。
+| 环境变量          | 含义           | 要求                                                                                                     |
+| ------------- | ------------ | ------------------------------------------------------------------------------------------------------ |
+| `AI_API_BASE` | API Base URL | 任意支持 OpenAI 兼容 Chat Completions 的服务地址，须为 http(s)，通常以 `/v1` 结尾；也接受完整的 `/chat/completions` 地址，脚本会自动补齐路径。 |
+| `AI_MODEL`    | 模型 ID        | 服务商提供的模型名。用户若只提供了 base url 和 key，**必须补问这一项**，三项齐全前不要运行。                                                |
+| `AI_API_KEY`  | API Key      | 用于请求认证。                                                                                                |
 
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python summarize.py
-```
+- 可选 `AI_API_KEY_HEADER`：仅接受 `Authorization`（默认 `Bearer <key>`）、`api-key`、`x-api-key`。
+- 索取时写清变量名与示例格式，不要让用户猜。
+- 安全要求：Key 仅通过**当前终端的环境变量**传入，不要写进任何文件、不要写死进代码、不要回显或打印到日志、不要提交到 git；提示用户不要把它贴进公开内容。
+- 若用户没有凭据或暂不提供，就停在「已装好但未运行」，并说明卡在哪里，不要自行编造地址、模型名或 Key，也不要擅自改用其他服务。
 
-## 指标口径
+## 4. 运行（需用户确认后进行）
 
-- 默认比较数据中最近两个完整自然月。日期按原始订单记录的日期读取，按数据首尾的观测日期排除不完整月份。
-- 销售额为正数量、正单价、单号不以 C 开头的订单行金额之和。销售单数按符合条件的发票号去重。
-- 取消额为单号以 C 开头、负数量、正单价的订单行金额绝对值之和，归入取消行所在月份。逐行金额四舍五入到便士。
-- 销售额减取消额得到本模块的净额。取消单未与原始订单逐笔匹配，净额可用于本案例的同口径比较。
-- 日期、单号、数量或单价缺失的行，以及不符合上述符号规则的行，排除并计数。原始订单行保留，发票行无需具备唯一性。
+- 首次运行会联网下载 UCI `online-retail.zip` 并校验 SHA-256，缓存到 `.cache/`；每次生成简报都会消耗所选模型服务的额度。这两件事都要先征得用户同意。
+- Windows（PowerShell，从 `AI-PM-Learning/` 目录执行）：
+  ```powershell
+  $env:AI_API_BASE = "<用户提供的 Base URL>"
+  $env:AI_MODEL = "<用户提供的模型 ID>"
+  $env:AI_API_KEY = "<用户提供的 Key>"
+  .\cases\online-retail\run.cmd --no-pause
+  ```
+  也可直接双击 `run.cmd` 交互填写（末尾会 `pause`；`--no-pause` 供非交互场景使用）。`run.cmd` 每次都会重新执行一次 `pip install -r requirements.txt`，需要联网。
+- macOS / Linux：按 README 用 `.venv/bin/python summarize.py` 运行。
+- 产物：`output/metrics.json`（核对指标数字）、`output/report.md`（经营简报）。
 
-[查看汇总 SQL](metrics.sql)
+## 5. 边界
 
-## 数据来源
+- 未拿到第 3 节三项凭据、或未获得「下载数据 / 消耗额度」的确认前，不要运行主程序。
+- 不要擅自下载大体积数据、不要调用需要账号或消耗额度的外部 API。
+- API 调用失败时如实报告 HTTP 状态码与原因，不要编造简报内容或指标数字；指标文件的生成与否也要如实说明。
 
-Daqing Chen（2015）发布的 UCI Online Retail，收录 2010–2011 年的英国网店交易，许可为 CC BY 4.0。脚本校验下载文件的 SHA-256。原始表、虚拟环境和本地输出由 Git 忽略。 [数据和许可证](https://archive.ics.uci.edu/dataset/352/online+retail)
+## 6. 报告
+
+用中文报告：落地路径与 commit、装了哪些依赖（含版本）、验证结果（区分已验证 / 未验证）、运行前还缺用户提供什么，并给出可直接复制的运行命令。
