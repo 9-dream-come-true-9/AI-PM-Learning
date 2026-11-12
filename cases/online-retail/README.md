@@ -1,7 +1,8 @@
 # online-retail 案例 · 本地落地与运行提示词
 
-把**下面分隔线以下**的这段提示词发给任意一个编码 Agent（Codex、Claude Code 等）。它会把 `cases/online-retail` 装到本地、配好隔离运行环境，并在运行前向你索要模型服务的 Base URL、模型 ID 和 API Key。
+点击下方代码块右上角的复制按钮，将整段提示词发给任意一个编码 Agent（Codex、Claude Code 等）。它会把 `cases/online-retail` 装到本地、配好隔离运行环境，并在运行前向你索要模型服务的 Base URL、模型 ID 和 API Key。
 
+````markdown
 # 落地并运行 online-retail 经营简报案例
 
 目标项目：<https://github.com/9-dream-come-true-9/AI-PM-Learning/tree/main/cases/online-retail>
@@ -70,3 +71,4 @@
 ## 6. 报告
 
 用中文报告：落地路径与 commit、装了哪些依赖（含版本）、验证结果（区分已验证 / 未验证）、运行前还缺用户提供什么，并给出可直接复制的运行命令。
+````
