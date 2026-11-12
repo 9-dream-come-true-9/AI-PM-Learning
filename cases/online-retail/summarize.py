@@ -3,16 +3,18 @@
 import hashlib
 import io
 import json
+import os
 import re
-import shutil
 import sqlite3
-import subprocess
 import sys
 import tempfile
 from contextlib import closing
 from decimal import ROUND_HALF_UP, Decimal
+from getpass import getpass
 from pathlib import Path
-from urllib.request import urlopen
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 from zipfile import ZipFile
 
 import pandas as pd
@@ -121,91 +123,119 @@ def compute_metrics(raw):
     }
 
 
-def object_schema(properties):
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": list(properties),
-        "additionalProperties": False,
-    }
+def read_api_settings():
+    values = []
+    interactive = sys.stdin.isatty()
+    for variable, prompt, secret in (
+        ("AI_API_BASE", "API Base URL：", False),
+        ("AI_MODEL", "模型名：", False),
+        ("AI_API_KEY", "API Key（输入时不显示）：", True),
+    ):
+        value = os.environ.get(variable, "").strip()
+        if not value and interactive:
+            read = getpass if secret else input
+            value = read(prompt).strip()
+        if not value:
+            raise ValueError(f"请提供 {variable}，或在终端中输入。")
+        values.append(value)
+
+    base, model, key = values
+    url = urlsplit(base)
+    if (
+        url.scheme not in ("https", "http")
+        or not url.hostname
+        or url.username is not None
+        or url.fragment
+    ):
+        raise ValueError("API Base URL 应为有效的 HTTP(S) 服务地址。")
+    path = url.path.rstrip("/")
+    if not path.endswith("/chat/completions"):
+        path += "/chat/completions"
+    return url._replace(path=path).geturl(), model, key
 
 
-def generate_analysis(metrics):
-    codex = shutil.which("codex")
-    if not codex:
-        raise RuntimeError("找不到 Codex CLI。请安装 Codex CLI，运行 codex login 后重试。")
-
-    text = {"type": "string"}
-    schema = object_schema({
-        "observations": {
-            "type": "array",
-            "items": object_schema({
-                "text": text,
-                "metric_ids": {
-                    "type": "array",
-                    "items": {"type": "string", "enum": list(METRICS)},
-                },
-            }),
-        },
-        "next_step": text,
-    })
+def generate_analysis(metrics, endpoint, model, api_key):
     evidence = {"metric_labels": METRICS, "months": metrics["months"]}
     prompt = (
         "你为一家网店的负责人写中文经营简报。只根据下方给定的两月汇总写两条观察，"
-        "每条引用一到三个 metric_ids，最后给一条可执行的下一步。"
+        "一条观察销售额与销售单数，一条观察取消额与净额。每条引用相关 metric_ids，最后给一条可执行的下一步。"
         "金额字段单位是英镑便士，单数字段是销售发票数。"
         "用本月、上月描述先后，只写方向和含义，不写任何数字或百分比，数值由程序插入。"
-        "不要推断因果，不把取消额理解成该月销售的取消率。"
+        "观察只描述表内四个指标的变化，不引入比率、均值或其他衍生指标。净额是销售额减去取消额的差额，不能称为收入、回款或利润。不要推断因果。"
         "下一步应可用订单表已有的商品、国家、日期或发票字段执行。取消单没有原单关联字段。"
-        "每条限八十字，单行纯文本。不要调用工具、打开文件或执行命令。"
+        "每条限八十字，单行纯文本。"
+        "只返回一个 JSON 对象。格式为 "
+        '{"observations":[{"text":"观察","metric_ids":["gross_pence"]},'
+        '{"text":"观察","metric_ids":["cancelled_pence"]}],"next_step":"建议"}。'
         "\n\n" + json.dumps(evidence, ensure_ascii=False)
     )
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    request = Request(
+        endpoint,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    header = os.environ.get("AI_API_KEY_HEADER", "Authorization").strip().lower()
+    if header not in ("authorization", "api-key", "x-api-key"):
+        raise ValueError("AI_API_KEY_HEADER 支持 Authorization、api-key 或 x-api-key。")
+    credential = f"Bearer {api_key}" if header == "authorization" else api_key
+    request.add_unredirected_header(header, credential)
 
-    with tempfile.TemporaryDirectory(prefix="retail-brief-") as directory:
-        scratch = Path(directory)
-        schema_path = scratch / "schema.json"
-        result_path = scratch / "analysis.json"
-        schema_path.write_text(json.dumps(schema), encoding="utf-8")
-        result = subprocess.run(
-            [
-                codex, "-a", "never", "exec", "--ignore-user-config", "--ephemeral",
-                "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never",
-                "--output-schema", str(schema_path), "--output-last-message",
-                str(result_path), "-",
-            ],
-            input=prompt,
-            encoding="utf-8",
-            errors="replace",
-            capture_output=True,
-            cwd=scratch,
-            timeout=180,
-        )
-        if result.returncode or not result_path.is_file():
-            reason = next(
-                (line.strip() for line in reversed(result.stderr.splitlines())
-                 if "error" in line.lower()),
-                "",
-            )
-            raise RuntimeError(
-                "Codex 调用失败，请检查登录、网络和额度。"
-                + (f" CLI 信息：{reason[:240]}" if reason else "")
-            )
-        analysis = json.loads(result_path.read_text(encoding="utf-8"))
+    try:
+        with urlopen(request, timeout=90) as response:
+            completion = json.load(response)
+    except HTTPError as error:
+        guidance = {
+            401: "请核对 Key、认证头和服务地址。",
+            403: "请确认 Key 有权调用该模型。",
+            404: "请核对服务地址和模型名。",
+            429: "请检查服务额度或请求频率。",
+        }
+        hint = guidance.get(error.code, "请检查模型配置或稍后重试。")
+        raise RuntimeError(f"API 请求失败（HTTP {error.code}）。{hint}") from None
+    except (TimeoutError, URLError):
+        raise RuntimeError("API 连接失败或超时，请检查服务地址和网络。") from None
+    except (UnicodeError, ValueError):
+        raise ValueError("API 返回了无法解析的响应。") from None
 
-    observations = analysis.get("observations", [])
-    if len(observations) != 2:
+    try:
+        choice = completion["choices"][0]
+        content = choice["message"]["content"].strip()
+    except (KeyError, IndexError, TypeError, AttributeError):
+        raise ValueError("API 响应缺少简报文本，请确认模型支持 Chat Completions。") from None
+    if choice.get("finish_reason") not in (None, "stop"):
+        raise ValueError("API 未完整生成简报，请检查模型配置后重试。")
+
+    fenced = re.fullmatch(r"\x60{3}(?:json)?\s*([\s\S]+?)\s*\x60{3}", content, re.IGNORECASE)
+    try:
+        analysis = json.loads(fenced[1] if fenced else content)
+    except ValueError:
+        raise ValueError("模型返回的简报无法解析为 JSON，请重试。") from None
+
+    observations = analysis.get("observations") if isinstance(analysis, dict) else None
+    if not isinstance(observations, list) or len(observations) != 2:
         raise ValueError("AI 简报应包含两条观察，请重试。")
     for observation in observations:
-        references = observation["metric_ids"]
-        if not 1 <= len(references) <= 3 or any(key not in METRICS for key in references):
+        if not isinstance(observation, dict):
+            raise ValueError("AI 简报的观察格式不合格，请重试。")
+        references = observation.get("metric_ids")
+        if (
+            not isinstance(references, list)
+            or not 1 <= len(references) <= 3
+            or any(not isinstance(key, str) or key not in METRICS for key in references)
+        ):
             raise ValueError("AI 简报引用了无法核对的指标，请重试。")
-        validate_text(observation["text"])
-    validate_text(analysis["next_step"])
+        validate_text(observation.get("text"))
+    validate_text(analysis.get("next_step"))
     return analysis
 
 
 def validate_text(text):
-    if not text.strip() or len(text) > 80 or re.search(r"[\d\r\n]", text):
+    if not isinstance(text, str) or not text.strip() or len(text) > 80 or re.search(r"[\d\r\n]", text):
         raise ValueError("AI 简报格式不合格，请重试。")
 
 
@@ -260,6 +290,7 @@ def render_report(metrics, analysis):
 def main():
     output = ROOT / "output"
     try:
+        endpoint, model, api_key = read_api_settings()
         print("正在读取 Excel 并计算月度指标…", flush=True)
         workbook = get_workbook()
         raw = pd.read_excel(workbook, usecols=COLUMNS, engine="openpyxl")
@@ -267,12 +298,12 @@ def main():
         metrics_json = json.dumps(metrics, ensure_ascii=False, indent=2) + "\n"
         atomic_write(output / "metrics.json", metrics_json.encode("utf-8"))
         print(f"指标已生成：{output / 'metrics.json'}", flush=True)
-        print("正在用 Codex 撰写简报…", flush=True)
-        report = render_report(metrics, generate_analysis(metrics))
+        print("正在调用模型 API 撰写简报…", flush=True)
+        report = render_report(metrics, generate_analysis(metrics, endpoint, model, api_key))
         atomic_write(output / "report.md", report.encode("utf-8"))
         print(f"简报已生成：{output / 'report.md'}")
         return 0
-    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+    except (OSError, ValueError, RuntimeError, EOFError) as error:
         print(f"运行失败：{error}", file=sys.stderr)
         return 1
 

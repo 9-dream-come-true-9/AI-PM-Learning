@@ -1,12 +1,23 @@
 # 用 AI 生成网店经营简报
 
-用一家英国网店的公开交易数据练习经营分析。运行一次，自动下载 Excel、用 pandas 清洗订单行、用 SQLite 计算指标，再由 Codex 撰写中文简报。报告中的金额和单数由程序生成，AI 只接收汇总指标。
+用一家英国网店的公开交易数据练习经营分析。运行一次，自动下载 Excel、用 pandas 清洗订单行、用 SQLite 计算指标，再调用模型 API 撰写中文简报。报告中的金额和单数由程序生成，AI 只接收汇总指标。
 
 [查看一次真实运行生成的简报](example-report.md)
 
 ## 一键运行
 
-准备 Python 3.11 或更新版本和支持 `codex exec --output-schema` 的 Codex CLI。先用 `codex login` 完成一次登录。首次运行需要联网安装依赖和下载数据，每次写简报会使用当前 Codex 账号的模型额度。
+准备 Python 3.11 或更新版本，以及任一支持 OpenAI 兼容 Chat Completions 接口的模型服务。首次运行需要联网安装依赖和下载数据。
+
+启动后按提示填写服务商提供的 API Base URL、模型名和 Key。Key 输入时不回显。也可以通过当前终端的环境变量设置，已提供的项会跳过输入提示。
+
+| 环境变量 | 填写内容 |
+| --- | --- |
+| `AI_API_BASE` | 服务商提供的 Base URL，例如以 `/v1` 结尾的地址。也接受完整的 `/chat/completions` 地址。 |
+| `AI_MODEL` | 服务商提供的模型 ID。 |
+| `AI_API_KEY` | 该服务商的 API Key。 |
+| `AI_API_KEY_HEADER` | 可选。默认使用 `Authorization: Bearer`。服务商要求时可改为 `api-key` 或 `x-api-key`。 |
+
+每次生成简报会使用所选模型服务的额度。模型只接收两个比较月份的汇总指标，Key 用于所填服务的请求认证。
 
 Windows 上双击 [run.cmd](run.cmd)，也可以用下面的 PowerShell 命令启动。
 
